@@ -184,11 +184,20 @@ class ScanSession:
                 )
         except subprocess.TimeoutExpired:
             # No paper / scanner busy — treat as no page available
+            if os.path.exists(page_filename):
+                os.remove(page_filename)
             return False
 
         if result.returncode != 0:
             # scanimage returns non-zero when no document is in the feeder —
             # this is normal; just means no page was ready yet.
+            if os.path.exists(page_filename):
+                os.remove(page_filename)
+            return False
+
+        # Check if the file has actual content (scanimage can succeed but output nothing)
+        if os.path.getsize(page_filename) == 0:
+            os.remove(page_filename)
             return False
 
         # Page scanned successfully
@@ -215,7 +224,7 @@ class ScanSession:
         temp_pdf_path = os.path.join(self.work_dir, "temp.pdf")
 
         # Use img2pdf to create PDF file, then ocrmypdf to process it
-        cmd_img2pdf = ["img2pdf"] + png_files + ["-o", temp_pdf_path]
+        cmd_img2pdf = ["img2pdf", "--output", temp_pdf_path] + png_files
         cmd_ocrmypdf = [
             "ocrmypdf",
             temp_pdf_path,  # read from file instead of stdin
