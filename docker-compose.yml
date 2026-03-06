@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  scanner-api:
+    build: .
+    ports:
+      - "8000:8000"
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+    volumes:
+      - ~/Dokumente/Scans:/app/scans
+    environment:
+      - SCANNER_RESOLUTION=300
+      # Uncomment and modify if auto-detection doesn't work:
+      # - SCANNER_NAME=Brother DS-640 USB
+      # - SCANNER_DEVICE=brother5:bus6;dev3
+    restart: unless-stopped
