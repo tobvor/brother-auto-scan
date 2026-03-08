@@ -94,7 +94,6 @@ class ScanSession:
                 if self.state != SessionState.PAUSED:
                     self.state = SessionState.PAUSED
 
-                pause_started_at = time.monotonic()
                 while self._pause_event.is_set():
                     # Allow cancel while paused
                     if self._cancel_event.is_set():
@@ -109,9 +108,8 @@ class ScanSession:
 
                     time.sleep(0.2)
 
-                # Adjust idle timer so paused time does not count toward auto-finish
-                paused_duration = time.monotonic() - pause_started_at
-                last_successful_scan_time += paused_duration
+                # On resume, start a fresh idle timeout window from now
+                last_successful_scan_time = time.monotonic()
 
                 # Resume scanning state if we were paused
                 if self.state == SessionState.PAUSED:
