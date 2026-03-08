@@ -140,7 +140,7 @@ function App() {
       case 'paused':
         return 'Paused'
       case 'processing':
-        return 'Processing PDF…'
+        return 'Create PDF…'
       case 'finished':
         return 'Finished'
       case 'cancelled':
@@ -413,28 +413,23 @@ function App() {
           </Button>
         )}
 
-        <Stack gap={4} align="center">
-          <Text c="gray.1" size="sm">
-            Current state: {scanState}
-          </Text>
-          {pagesScanned > 0 && (
-            <Text c="gray.1" size="sm">
+        {pagesScanned > 0 && (
+          <Box
+            style={{
+              padding: '4px 12px',
+              borderRadius: 999,
+              backgroundColor: 'rgba(0,0,0,0.45)',
+            }}
+          >
+            <Text c="gray.0" size="sm" fw={500}>
               Pages scanned: {pagesScanned}
             </Text>
-          )}
-        </Stack>
+          </Box>
+        )}
 
         <Group justify="center" gap="md">
           {scanState === 'scanning' && (
             <>
-              <Button
-                color="green"
-                variant="light"
-                onClick={handleFinish}
-                disabled={isBusy || pagesScanned === 0}
-              >
-                Finish now
-              </Button>
               <Button
                 color="yellow"
                 variant="light"
@@ -451,11 +446,6 @@ function App() {
               >
                 Cancel
               </Button>
-            </>
-          )}
-
-          {scanState === 'paused' && (
-            <>
               <Button
                 color="green"
                 variant="light"
@@ -464,6 +454,11 @@ function App() {
               >
                 Finish now
               </Button>
+            </>
+          )}
+
+          {scanState === 'paused' && (
+            <>
               <Button
                 color="green"
                 variant="light"
@@ -479,6 +474,14 @@ function App() {
                 disabled={isBusy}
               >
                 Cancel
+              </Button>
+              <Button
+                color="green"
+                variant="light"
+                onClick={handleFinish}
+                disabled={isBusy || pagesScanned === 0}
+              >
+                Finish now
               </Button>
             </>
           )}
@@ -504,14 +507,14 @@ function App() {
               >
                 Download PDF
               </Button>
-              <Button variant="subtle" color="gray" onClick={handleReset} disabled={isBusy}>
+              <Button variant="light" color="gray" onClick={handleReset} disabled={isBusy}>
                 Reset
               </Button>
             </>
           )}
 
           {(scanState === 'cancelled' || scanState === 'error') && (
-            <Button variant="subtle" color="gray" onClick={handleReset} disabled={isBusy}>
+            <Button variant="light" color="gray" onClick={handleReset} disabled={isBusy}>
               Reset
             </Button>
           )}

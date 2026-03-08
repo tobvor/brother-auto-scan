@@ -5,7 +5,7 @@ from pydantic import BaseModel
 import uuid
 import os
 import subprocess
-from .scanner import AUTO_FINISH_TIMEOUT_SECONDS, ScanSession, SessionState
+from .scanner import AUTO_FINISH_TIMEOUT_SECONDS, SCAN_INTERVAL_SECONDS, ScanSession, SessionState
 
 def detect_scanner() -> tuple[bool, str | None]:
     """
@@ -65,6 +65,11 @@ sessions: dict[str, ScanSession] = {}
 
 # --- Models ---
 
+class StartScanRequest(BaseModel):
+    scan_interval_seconds: int | None = None
+    auto_finish_timeout_seconds: int | None = None
+
+
 class StartScanResponse(BaseModel):
     session_id: str
     message: str
@@ -103,16 +108,36 @@ class ResumeScanResponse(BaseModel):
 # --- Routes ---
 
 @app.post("/scan/start", response_model=StartScanResponse, status_code=201)
-def start_scan(background_tasks: BackgroundTasks):
+def start_scan(
+    background_tasks: BackgroundTasks,
+    params: StartScanRequest | None = None,
+):
     """
     Start a new scanning session.
     Immediately begins a scan loop:
-      - Scans a page every 2 seconds
-      - Automatically finishes after 20 seconds of no new pages
+      - Scans a page every `scan_interval_seconds` (default: 2s)
+      - Automatically finishes after `auto_finish_timeout_seconds` of no new pages (default: 20s)
+    You can override both values by passing them in the JSON body.
     Returns a session_id to use for finish/cancel/status/download.
     """
+    # Resolve effective configuration (fall back to global defaults if not provided)
+    scan_interval_seconds = (
+        params.scan_interval_seconds
+        if params and params.scan_interval_seconds is not None
+        else SCAN_INTERVAL_SECONDS
+    )
+    auto_finish_timeout_seconds = (
+        params.auto_finish_timeout_seconds
+        if params and params.auto_finish_timeout_seconds is not None
+        else AUTO_FINISH_TIMEOUT_SECONDS
+    )
+
     session_id = str(uuid.uuid4())
-    session = ScanSession(session_id)
+    session = ScanSession(
+        session_id,
+        scan_interval_seconds=scan_interval_seconds,
+        auto_finish_timeout_seconds=auto_finish_timeout_seconds,
+    )
     sessions[session_id] = session
 
     background_tasks.add_task(session.run_scan_loop)
@@ -121,11 +146,11 @@ def start_scan(background_tasks: BackgroundTasks):
         session_id=session_id,
         message=(
             "Scan loop started. Place pages on the scanner. "
-            f"The session will auto-finish after {AUTO_FINISH_TIMEOUT_SECONDS}s of no new pages. "
+            f"The session will auto-finish after {auto_finish_timeout_seconds}s of no new pages. "
             "Call POST /scan/{session_id}/finish to stop and generate PDF immediately, "
             "or POST /scan/{session_id}/cancel to abort."
         ),
-        timeout_seconds=AUTO_FINISH_TIMEOUT_SECONDS,
+        timeout_seconds=auto_finish_timeout_seconds,
     )
 
 

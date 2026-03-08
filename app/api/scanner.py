@@ -7,8 +7,9 @@ import threading
 from enum import Enum
 
 
-# How often (seconds) to attempt scanning the next page
-SCAN_INTERVAL_SECONDS = 2
+# How often (seconds) to attempt scanning the next page.
+# Can be configured via SCAN_INTERVAL_SECONDS environment variable, defaults to 2s.
+SCAN_INTERVAL_SECONDS = int(os.getenv("SCAN_INTERVAL_SECONDS", "2"))
 
 # Automatically finish after this many seconds without a successful new page.
 # Can be configured via AUTO_FINISH_TIMEOUT_SECONDS environment variable, defaults to 20s.
@@ -30,11 +31,20 @@ class SessionState(str, Enum):
 
 
 class ScanSession:
-    def __init__(self, session_id: str):
+    def __init__(
+        self,
+        session_id: str,
+        scan_interval_seconds: int = SCAN_INTERVAL_SECONDS,
+        auto_finish_timeout_seconds: int = AUTO_FINISH_TIMEOUT_SECONDS,
+    ):
         self.session_id = session_id
         self.state = SessionState.SCANNING
         self.pages_scanned = 0
         self.error: str | None = None
+
+        # Per-session timing configuration
+        self.scan_interval_seconds = scan_interval_seconds
+        self.auto_finish_timeout_seconds = auto_finish_timeout_seconds
 
         # Threading events for external control
         self._finish_event = threading.Event()
@@ -68,7 +78,7 @@ class ScanSession:
 
     def run_scan_loop(self) -> None:
         """
-        Continuously scan pages every SCAN_INTERVAL_SECONDS.
+        Continuously scan pages every self.scan_interval_seconds.
         Stops when:
           - finish is requested  → generates PDF
           - cancel is requested  → cleans up and exits
@@ -120,7 +130,7 @@ class ScanSession:
 
             # --- Auto-finish on idle timeout ---
             idle_seconds = time.monotonic() - last_successful_scan_time
-            if idle_seconds >= AUTO_FINISH_TIMEOUT_SECONDS:
+            if idle_seconds >= self.auto_finish_timeout_seconds:
                 if self.pages_scanned > 0:
                     self._run_ocrmypdf()
                 else:
@@ -135,7 +145,7 @@ class ScanSession:
                 last_successful_scan_time = time.monotonic()
 
             # --- Wait before next attempt, but respect control signals ---
-            cancelled = self._cancel_event.wait(timeout=SCAN_INTERVAL_SECONDS)
+            cancelled = self._cancel_event.wait(timeout=self.scan_interval_seconds)
             if cancelled:
                 self.state = SessionState.CANCELLED
                 self.cleanup()
