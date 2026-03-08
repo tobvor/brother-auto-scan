@@ -90,6 +90,16 @@ class CancelScanResponse(BaseModel):
     message: str
 
 
+class PauseScanResponse(BaseModel):
+    session_id: str
+    message: str
+
+
+class ResumeScanResponse(BaseModel):
+    session_id: str
+    message: str
+
+
 # --- Routes ---
 
 @app.post("/scan/start", response_model=StartScanResponse, status_code=201)
@@ -123,7 +133,7 @@ def start_scan(background_tasks: BackgroundTasks):
 def finish_scan(session_id: str):
     """
     Stop the scan loop immediately and start PDF generation.
-    Works only while state is 'scanning'.
+    Typically used while state is 'scanning' or 'paused'.
     """
     session = _get_session(session_id)
 
@@ -176,7 +186,7 @@ def cancel_scan(session_id: str):
 def get_status(session_id: str):
     """
     Get the current state of a scan session.
-    States: scanning | processing | finished | cancelled | error
+    States: scanning | paused | processing | finished | cancelled | error
     """
     session = _get_session(session_id)
     return SessionStatusResponse(
@@ -184,6 +194,53 @@ def get_status(session_id: str):
         state=session.state.value,
         pages_scanned=session.pages_scanned,
         error=session.error,
+    )
+
+
+@app.post("/scan/{session_id}/pause", response_model=PauseScanResponse)
+def pause_scan(session_id: str):
+    """
+    Pause an active scan session.
+    Stops the scan loop from acquiring new pages but does not start PDF generation.
+    """
+    session = _get_session(session_id)
+
+    if session.state == SessionState.PAUSED:
+        raise HTTPException(status_code=400, detail="Session is already paused.")
+    if session.state != SessionState.SCANNING:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot pause: session is in state '{session.state.value}'.",
+        )
+
+    session.request_pause()
+
+    return PauseScanResponse(
+        session_id=session_id,
+        message="Session paused. Scanning will not continue until resumed.",
+    )
+
+
+@app.post("/scan/{session_id}/resume", response_model=ResumeScanResponse)
+def resume_scan(session_id: str):
+    """
+    Resume a previously paused scan session.
+    """
+    session = _get_session(session_id)
+
+    if session.state == SessionState.SCANNING:
+        raise HTTPException(status_code=400, detail="Session is already scanning.")
+    if session.state != SessionState.PAUSED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot resume: session is in state '{session.state.value}'.",
+        )
+
+    session.request_resume()
+
+    return ResumeScanResponse(
+        session_id=session_id,
+        message="Session resumed. Scanning will continue.",
     )
 
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Alert, Box, Button, Group, RingProgress, Stack, Text, Title } from '@mantine/core'
 
-type ScanState = 'idle' | 'scanning' | 'processing' | 'finished' | 'cancelled' | 'error'
+type ScanState = 'idle' | 'scanning' | 'paused' | 'processing' | 'finished' | 'cancelled' | 'error'
 
 type SessionStatusResponse = {
   session_id: string
@@ -24,6 +24,16 @@ type FinishScanResponse = {
 }
 
 type CancelScanResponse = {
+  session_id: string
+  message: string
+}
+
+type PauseScanResponse = {
+  session_id: string
+  message: string
+}
+
+type ResumeScanResponse = {
   session_id: string
   message: string
 }
@@ -72,6 +82,26 @@ async function cancelScan(sessionId: string): Promise<CancelScanResponse> {
   return res.json()
 }
 
+async function pauseScan(sessionId: string): Promise<PauseScanResponse> {
+  const res = await fetch(`${API_BASE_URL}/scan/${sessionId}/pause`, {
+    method: 'POST',
+  })
+  if (!res.ok) {
+    throw new Error(`Failed to pause scan: ${res.statusText}`)
+  }
+  return res.json()
+}
+
+async function resumeScan(sessionId: string): Promise<ResumeScanResponse> {
+  const res = await fetch(`${API_BASE_URL}/scan/${sessionId}/resume`, {
+    method: 'POST',
+  })
+  if (!res.ok) {
+    throw new Error(`Failed to resume scan: ${res.statusText}`)
+  }
+  return res.json()
+}
+
 async function downloadPdf(sessionId: string): Promise<void> {
   const res = await fetch(`${API_BASE_URL}/scan/${sessionId}/download`)
   if (!res.ok) {
@@ -99,7 +129,7 @@ function App() {
   const [lastActivityAt, setLastActivityAt] = useState<number | null>(null)
   const [remainingSeconds, setRemainingSeconds] = useState<number>(DEFAULT_TIMEOUT_SECONDS)
 
-  const isActive = scanState === 'scanning' || scanState === 'processing'
+  const isActive = scanState === 'scanning' || scanState === 'paused' || scanState === 'processing'
 
   const buttonLabel = useMemo(() => {
     switch (scanState) {
@@ -107,6 +137,8 @@ function App() {
         return 'Start scan'
       case 'scanning':
         return 'Scanning…'
+      case 'paused':
+        return 'Paused'
       case 'processing':
         return 'Processing PDF…'
       case 'finished':
@@ -126,6 +158,8 @@ function App() {
         return 'blue'
       case 'scanning':
         return 'blue'
+      case 'paused':
+        return 'yellow'
       case 'processing':
         return 'teal'
       case 'finished':
@@ -168,7 +202,7 @@ function App() {
   }, [])
 
   const handleFinish = useCallback(async () => {
-    if (!sessionId || scanState !== 'scanning') return
+    if (!sessionId || (scanState !== 'scanning' && scanState !== 'paused')) return
     try {
       setIsBusy(true)
       setError(null)
@@ -180,6 +214,39 @@ function App() {
       setIsBusy(false)
     }
   }, [sessionId, scanState])
+
+  const handlePause = useCallback(async () => {
+    if (!sessionId || scanState !== 'scanning') return
+    try {
+      setIsBusy(true)
+      setError(null)
+      await pauseScan(sessionId)
+      setScanState('paused')
+    } catch (e: any) {
+      setError(e.message ?? 'Failed to pause scan.')
+      setScanState('error')
+    } finally {
+      setIsBusy(false)
+    }
+  }, [sessionId, scanState])
+
+  const handleResume = useCallback(async () => {
+    if (!sessionId || scanState !== 'paused') return
+    try {
+      setIsBusy(true)
+      setError(null)
+      await resumeScan(sessionId)
+      const totalTimeout = timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS
+      setScanState('scanning')
+      setLastActivityAt(Date.now())
+      setRemainingSeconds(totalTimeout)
+    } catch (e: any) {
+      setError(e.message ?? 'Failed to resume scan.')
+      setScanState('error')
+    } finally {
+      setIsBusy(false)
+    }
+  }, [sessionId, scanState, timeoutSeconds])
 
   const handleCancel = useCallback(async () => {
     if (!sessionId) return
@@ -360,6 +427,43 @@ function App() {
         <Group justify="center" gap="md">
           {scanState === 'scanning' && (
             <>
+              <Button
+                color="yellow"
+                variant="light"
+                onClick={handlePause}
+                disabled={isBusy}
+              >
+                Pause
+              </Button>
+              <Button
+                color="green"
+                variant="light"
+                onClick={handleFinish}
+                disabled={isBusy || pagesScanned === 0}
+              >
+                Finish now
+              </Button>
+              <Button
+                color="red"
+                variant="light"
+                onClick={handleCancel}
+                disabled={isBusy}
+              >
+                Cancel
+              </Button>
+            </>
+          )}
+
+          {scanState === 'paused' && (
+            <>
+              <Button
+                color="green"
+                variant="light"
+                onClick={handleResume}
+                disabled={isBusy}
+              >
+                Resume
+              </Button>
               <Button
                 color="green"
                 variant="light"
