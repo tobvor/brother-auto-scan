@@ -1,30 +1,9 @@
 # Brother Scanner API
 
 A FastAPI REST API to scan documents with a Brother printer via `scanimage`,
-auto-collecting pages in a loop, then generating a PDF/A with `img2pdf` and `ocrmypdf`,
-and saving to a target directory like the bash script.
-
-## Prerequisites
-
-```bash
-# Debian/Ubuntu
-sudo apt install sane-utils ocrmypdf img2pdf
-
-# Find your scanner device name and update scanner.py
-scanimage -L
-# e.g. device `brother5:net1;dev0' is a Brother ...
-```
+auto-collecting pages in a loop, then generating a PDF/A with `img2pdf` and `ocrmypdf`.
 
 ## Setup
-
-### Local Development
-
-```bash
-pip install -r requirements.txt
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-### Docker/Podman Container
 
 Build the container:
 
@@ -36,11 +15,11 @@ podman build -t brother-scanner-api .
 
 #### Option 1: Using docker-compose (recommended for easy management)
 
-Create a `docker-compose.yml` file (already included in the repository) and run:
+Create a `compose.yml` file (already included in the repository) and run:
 
 ```bash
 # Install podman-compose if not available: pip install podman-compose
-docker-compose up -d
+docker compose up -d
 # or with podman-compose
 podman-compose up -d
 ```
@@ -148,3 +127,55 @@ curl -X DELETE http://localhost:8000/scan/$SESSION
 ## Swagger UI
 
 Open http://localhost:8000/docs
+
+## Web GUI (React + Mantine)
+
+This project includes a minimal web GUI built with React, Vite, and Mantine. The GUI is served by the same FastAPI container and talks to the existing `/scan/*` endpoints.
+
+- When **GUI is enabled**, opening `http://localhost:8000/` shows:
+  - A full-screen gradient background.
+  - A single round **Start scan** button in the center.
+  - When scanning/processing, the button displays the current status and page count; a **Cancel** button appears underneath.
+  - When finished, you can **download the PDF** and **reset** the session.
+
+### Running with GUI
+
+- Docker:
+
+```bash
+docker run -d --name scanner-api -p 8000:8000 \
+  --device /dev/bus/usb \
+  -v ~/Dokumente/Scans:/app/scans \
+  -e ENABLE_GUI=true \
+  brother-scanner-api
+```
+
+- docker-compose (default in this repo):
+
+```bash
+docker compose up -d
+```
+
+The service exposes both the API (`/scan/...`) and the GUI at `/`.
+
+### Running without GUI (headless API only)
+
+To disable the GUI and run the container in **headless mode**, set `ENABLE_GUI=false`. In this mode the API behaves as before and no frontend is mounted.
+
+- Docker:
+
+```bash
+docker run -d --name scanner-api -p 8000:8000 \
+  --device /dev/bus/usb \
+  -v ~/Dokumente/Scans:/app/scans \
+  -e ENABLE_GUI=false \
+  brother-scanner-api
+```
+
+- docker-compose override:
+
+```bash
+ENABLE_GUI=false docker compose up -d
+```
+
+In both cases, use the same API endpoints described above; only the web GUI at `/` is disabled.
