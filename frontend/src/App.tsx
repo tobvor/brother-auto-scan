@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Box, Button, Group, RingProgress, Stack, Text, Title } from '@mantine/core'
+import { Alert, Box, Button, Group, RingProgress, Select, Stack, Text, Title } from '@mantine/core'
+import { keyframes } from '@emotion/react'
 
 type ScanState = 'idle' | 'scanning' | 'paused' | 'processing' | 'finished' | 'cancelled' | 'error'
 
@@ -41,12 +42,26 @@ type ResumeScanResponse = {
 const POLL_INTERVAL_MS = 1500
 
 const DEFAULT_TIMEOUT_SECONDS = 20
+const TIMEOUT_OPTIONS = [10, 20, 30, 40, 50, 60, 120, 300] as const
+
+const pulseAnimation = keyframes({
+  '0%': { transform: 'scale(1)' },
+  '50%': { transform: 'scale(1.04)' },
+  '100%': { transform: 'scale(1)' },
+})
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
-async function startScan(): Promise<StartScanResponse> {
+async function startScan(autoFinishTimeoutSeconds?: number): Promise<StartScanResponse> {
   const res = await fetch(`${API_BASE_URL}/scan/start`, {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body:
+      autoFinishTimeoutSeconds !== undefined
+        ? JSON.stringify({ auto_finish_timeout_seconds: autoFinishTimeoutSeconds })
+        : JSON.stringify({}),
   })
   if (!res.ok) {
     throw new Error(`Failed to start scan: ${res.statusText}`)
@@ -128,6 +143,7 @@ function App() {
   const [timeoutSeconds, setTimeoutSeconds] = useState<number | null>(null)
   const [lastActivityAt, setLastActivityAt] = useState<number | null>(null)
   const [remainingSeconds, setRemainingSeconds] = useState<number>(DEFAULT_TIMEOUT_SECONDS)
+  const [selectedTimeout, setSelectedTimeout] = useState<string>(String(DEFAULT_TIMEOUT_SECONDS))
 
   const isActive = scanState === 'scanning' || scanState === 'paused' || scanState === 'processing'
 
@@ -185,7 +201,7 @@ function App() {
     try {
       setIsBusy(true)
       setError(null)
-      const res = await startScan()
+      const res = await startScan(Number(selectedTimeout) || DEFAULT_TIMEOUT_SECONDS)
       setSessionId(res.session_id)
       const totalTimeout = res.timeout_seconds ?? DEFAULT_TIMEOUT_SECONDS
       setTimeoutSeconds(totalTimeout)
@@ -199,7 +215,7 @@ function App() {
     } finally {
       setIsBusy(false)
     }
-  }, [])
+  }, [selectedTimeout])
 
   const handleFinish = useCallback(async () => {
     if (!sessionId || (scanState !== 'scanning' && scanState !== 'paused')) return
@@ -254,7 +270,14 @@ function App() {
       setIsBusy(true)
       setError(null)
       await cancelScan(sessionId)
-      setScanState('cancelled')
+      setSessionId(null)
+      setScanState('idle')
+      setPagesScanned(0)
+      setError(null)
+      setIsBusy(false)
+      setTimeoutSeconds(null)
+      setLastActivityAt(null)
+      setRemainingSeconds(DEFAULT_TIMEOUT_SECONDS)
     } catch (e: any) {
       setError(e.message ?? 'Failed to cancel scan.')
       setScanState('error')
@@ -372,6 +395,9 @@ function App() {
             thickness={10}
             sections={[{ value: timeoutProgress, color: 'teal' }]}
             rootColor="rgba(0,0,0,0.35)"
+            style={{
+              animation: `${pulseAnimation} 1.5s ease-in-out infinite`,
+            }}
             label={
               <Button
                 onClick={undefined}
@@ -518,6 +544,30 @@ function App() {
               Reset
             </Button>
           )}
+        </Group>
+
+        <Group gap="xs" align="center" mt="sm">
+          <Text c="gray.1" size="xs">
+            Auto-finish after
+          </Text>
+          <Select
+            size="xs"
+            value={selectedTimeout}
+            onChange={(value) => value && setSelectedTimeout(value)}
+            data={TIMEOUT_OPTIONS.map((sec) => ({
+              value: String(sec),
+              label: `${sec}s`,
+            }))}
+            disabled={scanState !== 'idle' || isBusy}
+            styles={{
+              input: {
+                minWidth: 72,
+                height: 28,
+                paddingInline: 8,
+                fontSize: 12,
+              },
+            }}
+          />
         </Group>
 
         {error && (
