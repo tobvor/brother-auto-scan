@@ -15,6 +15,13 @@ type StartScanResponse = {
   message: string
 }
 
+type FinishScanResponse = {
+  session_id: string
+  total_pages: number
+  message: string
+  output_file: string
+}
+
 type CancelScanResponse = {
   session_id: string
   message: string
@@ -38,6 +45,16 @@ async function getStatus(sessionId: string): Promise<SessionStatusResponse> {
   const res = await fetch(`${API_BASE_URL}/scan/${sessionId}/status`)
   if (!res.ok) {
     throw new Error(`Failed to get status: ${res.statusText}`)
+  }
+  return res.json()
+}
+
+async function finishScan(sessionId: string): Promise<FinishScanResponse> {
+  const res = await fetch(`${API_BASE_URL}/scan/${sessionId}/finish`, {
+    method: 'POST',
+  })
+  if (!res.ok) {
+    throw new Error(`Failed to finish scan: ${res.statusText}`)
   }
   return res.json()
 }
@@ -83,11 +100,11 @@ function App() {
       case 'idle':
         return 'Start scan'
       case 'scanning':
-        return pagesScanned > 0 ? `Scanning… (${pagesScanned} pages)` : 'Scanning…'
+        return 'Scanning…'
       case 'processing':
         return 'Processing PDF…'
       case 'finished':
-        return pagesScanned > 0 ? `Finished (${pagesScanned} pages)` : 'Finished'
+        return 'Finished'
       case 'cancelled':
         return 'Cancelled'
       case 'error':
@@ -95,18 +112,18 @@ function App() {
       default:
         return 'Start scan'
     }
-  }, [scanState, pagesScanned])
+  }, [scanState])
 
   const primaryColor: string = useMemo(() => {
     switch (scanState) {
       case 'idle':
         return 'blue'
       case 'scanning':
-        return 'green'
+        return 'blue'
       case 'processing':
         return 'teal'
       case 'finished':
-        return 'grape'
+        return 'green'
       case 'cancelled':
         return 'gray'
       case 'error':
@@ -131,6 +148,20 @@ function App() {
       setIsBusy(false)
     }
   }, [])
+
+  const handleFinish = useCallback(async () => {
+    if (!sessionId || scanState !== 'scanning') return
+    try {
+      setIsBusy(true)
+      setError(null)
+      await finishScan(sessionId)
+    } catch (e: any) {
+      setError(e.message ?? 'Failed to finish scan.')
+      setScanState('error')
+    } finally {
+      setIsBusy(false)
+    }
+  }, [sessionId, scanState])
 
   const handleCancel = useCallback(async () => {
     if (!sessionId) return
@@ -218,25 +249,64 @@ function App() {
           Brother Auto Scan
         </Title>
 
-        <Button
-          onClick={scanState === 'idle' ? handleStart : undefined}
-          radius={999}
-          size="xl"
-          color={primaryColor}
-          disabled={scanState !== 'idle' || isBusy}
-          style={{
-            width: 180,
-            height: 180,
-            borderRadius: '50%',
-            fontSize: '1.1rem',
-            boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
-          }}
-        >
-          <Text fw={600}>{buttonLabel}</Text>
-        </Button>
+        <Group justify="center" align="center" gap="xl" wrap="wrap">
+          <Button
+            onClick={scanState === 'idle' ? handleStart : undefined}
+            radius={999}
+            size="xl"
+            color={primaryColor}
+            disabled={scanState !== 'idle' || isBusy}
+            style={{
+              width: 180,
+              height: 180,
+              borderRadius: '50%',
+              fontSize: '1.1rem',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+            }}
+          >
+            <Text fw={600}>{buttonLabel}</Text>
+          </Button>
+
+          <Stack gap={4} align="flex-start">
+            <Text c="gray.1" size="sm">
+              Current state: {scanState}
+            </Text>
+            {pagesScanned > 0 && (
+              <Text c="gray.1" size="sm">
+                Pages scanned: {pagesScanned}
+              </Text>
+            )}
+            {sessionId && (
+              <Text c="gray.4" size="xs">
+                Session: {sessionId}
+              </Text>
+            )}
+          </Stack>
+        </Group>
 
         <Group justify="center" gap="md">
-          {(scanState === 'scanning' || scanState === 'processing') && (
+          {scanState === 'scanning' && (
+            <>
+              <Button
+                color="green"
+                variant="light"
+                onClick={handleFinish}
+                disabled={isBusy || pagesScanned === 0}
+              >
+                Finish now
+              </Button>
+              <Button
+                color="red"
+                variant="light"
+                onClick={handleCancel}
+                disabled={isBusy}
+              >
+                Cancel
+              </Button>
+            </>
+          )}
+
+          {scanState === 'processing' && (
             <Button
               color="red"
               variant="light"
@@ -269,18 +339,6 @@ function App() {
             </Button>
           )}
         </Group>
-
-        <Stack gap={4} align="center">
-          <Text c="gray.1" size="sm">
-            Current state: {scanState}
-            {pagesScanned > 0 && ` • Pages scanned: ${pagesScanned}`}
-          </Text>
-          {sessionId && (
-            <Text c="gray.4" size="xs">
-              Session: {sessionId}
-            </Text>
-          )}
-        </Stack>
 
         {error && (
           <Alert color="red" variant="light" maw={420}>
