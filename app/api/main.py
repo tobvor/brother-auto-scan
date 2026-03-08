@@ -4,7 +4,7 @@ from pydantic import BaseModel
 import uuid
 import os
 import subprocess
-from scanner import ScanSession, SessionState
+from .scanner import ScanSession, SessionState
 
 def detect_scanner() -> tuple[bool, str | None]:
     """
