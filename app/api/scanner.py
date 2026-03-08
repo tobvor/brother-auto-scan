@@ -10,8 +10,9 @@ from enum import Enum
 # How often (seconds) to attempt scanning the next page
 SCAN_INTERVAL_SECONDS = 2
 
-# Automatically finish after this many seconds without a successful new page
-AUTO_FINISH_TIMEOUT_SECONDS = 20
+# Automatically finish after this many seconds without a successful new page.
+# Can be configured via AUTO_FINISH_TIMEOUT_SECONDS environment variable, defaults to 20s.
+AUTO_FINISH_TIMEOUT_SECONDS = int(os.getenv("AUTO_FINISH_TIMEOUT_SECONDS", "20"))
 
 # Scanner parameters from bash script
 SCANNER_NAME = os.getenv('SCANNER_NAME', 'Brother DS-640 USB')

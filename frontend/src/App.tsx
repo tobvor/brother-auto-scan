@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Box, Button, Group, Stack, Text, Title } from '@mantine/core'
+import { Alert, Box, Button, Group, RingProgress, Stack, Text, Title } from '@mantine/core'
 
 type ScanState = 'idle' | 'scanning' | 'processing' | 'finished' | 'cancelled' | 'error'
 
@@ -13,6 +13,7 @@ type SessionStatusResponse = {
 type StartScanResponse = {
   session_id: string
   message: string
+  timeout_seconds: number
 }
 
 type FinishScanResponse = {
@@ -28,6 +29,8 @@ type CancelScanResponse = {
 }
 
 const POLL_INTERVAL_MS = 1500
+
+const DEFAULT_TIMEOUT_SECONDS = 20
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -92,6 +95,9 @@ function App() {
   const [pagesScanned, setPagesScanned] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState(false)
+  const [timeoutSeconds, setTimeoutSeconds] = useState<number | null>(null)
+  const [lastActivityAt, setLastActivityAt] = useState<number | null>(null)
+  const [remainingSeconds, setRemainingSeconds] = useState<number>(DEFAULT_TIMEOUT_SECONDS)
 
   const isActive = scanState === 'scanning' || scanState === 'processing'
 
@@ -133,14 +139,26 @@ function App() {
     }
   }, [scanState])
 
+  const timeoutProgress = useMemo(() => {
+    if (scanState !== 'scanning' || !lastActivityAt) return 0
+    const total = timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS
+    const used = total - remainingSeconds
+    const ratio = Math.min(1, Math.max(0, used / total))
+    return ratio * 100
+  }, [scanState, lastActivityAt, remainingSeconds, timeoutSeconds])
+
   const handleStart = useCallback(async () => {
     try {
       setIsBusy(true)
       setError(null)
       const res = await startScan()
       setSessionId(res.session_id)
+      const totalTimeout = res.timeout_seconds ?? DEFAULT_TIMEOUT_SECONDS
+      setTimeoutSeconds(totalTimeout)
       setScanState('scanning')
       setPagesScanned(0)
+      setLastActivityAt(Date.now())
+      setRemainingSeconds(totalTimeout)
     } catch (e: any) {
       setError(e.message ?? 'Failed to start scan.')
       setScanState('error')
@@ -198,6 +216,9 @@ function App() {
     setPagesScanned(0)
     setError(null)
     setIsBusy(false)
+    setTimeoutSeconds(null)
+    setLastActivityAt(null)
+    setRemainingSeconds(DEFAULT_TIMEOUT_SECONDS)
   }, [])
 
   useEffect(() => {
@@ -210,7 +231,14 @@ function App() {
       if (cancelled) return
       try {
         const status = await getStatus(sessionId)
-        setPagesScanned(status.pages_scanned)
+        setPagesScanned((prev) => {
+          if (status.pages_scanned > 0 && status.pages_scanned !== prev) {
+            const total = timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS
+            setLastActivityAt(Date.now())
+            setRemainingSeconds(total)
+          }
+          return status.pages_scanned
+        })
         setScanState(status.state)
         if (status.error) {
           setError(status.error)
@@ -229,7 +257,28 @@ function App() {
       cancelled = true
       window.clearInterval(interval)
     }
-  }, [sessionId, isActive])
+  }, [sessionId, isActive, timeoutSeconds])
+
+  useEffect(() => {
+    if (scanState !== 'scanning' || !lastActivityAt) {
+      if (scanState !== 'scanning') {
+        const total = timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS
+        setRemainingSeconds(total)
+      }
+      return
+    }
+
+    const interval = window.setInterval(() => {
+      const total = timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS
+      const elapsed = (Date.now() - lastActivityAt) / 1000
+      const remaining = Math.max(0, total - elapsed)
+      setRemainingSeconds(remaining)
+    }, 200)
+
+    return () => {
+      window.clearInterval(interval)
+    }
+  }, [scanState, lastActivityAt, timeoutSeconds])
 
   return (
     <Box
@@ -242,6 +291,7 @@ function App() {
         justifyContent: 'center',
         padding: '1.5rem',
         boxSizing: 'border-box',
+        position: 'relative',
       }}
     >
       <Stack align="center" gap="lg">
@@ -249,7 +299,35 @@ function App() {
           Brother Auto Scan
         </Title>
 
-        <Group justify="center" align="center" gap="xl" wrap="wrap">
+        {scanState === 'scanning' ? (
+          <RingProgress
+            size={220}
+            thickness={10}
+            sections={[{ value: timeoutProgress, color: 'teal' }]}
+            rootColor="rgba(0,0,0,0.35)"
+            label={
+              <Button
+                onClick={undefined}
+                radius={999}
+                size="xl"
+                color={primaryColor}
+                disabled
+                style={{
+                  width: 180,
+                  height: 180,
+                  borderRadius: '50%',
+                  fontSize: '1.1rem',
+                  boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+                }}
+              >
+                <Stack gap={2} align="center">
+                  <Text fw={600}>{buttonLabel}</Text>
+                  <Text size="xs">{Math.ceil(remainingSeconds)}s</Text>
+                </Stack>
+              </Button>
+            }
+          />
+        ) : (
           <Button
             onClick={scanState === 'idle' ? handleStart : undefined}
             radius={999}
@@ -266,23 +344,18 @@ function App() {
           >
             <Text fw={600}>{buttonLabel}</Text>
           </Button>
+        )}
 
-          <Stack gap={4} align="flex-start">
+        <Stack gap={4} align="center">
+          <Text c="gray.1" size="sm">
+            Current state: {scanState}
+          </Text>
+          {pagesScanned > 0 && (
             <Text c="gray.1" size="sm">
-              Current state: {scanState}
+              Pages scanned: {pagesScanned}
             </Text>
-            {pagesScanned > 0 && (
-              <Text c="gray.1" size="sm">
-                Pages scanned: {pagesScanned}
-              </Text>
-            )}
-            {sessionId && (
-              <Text c="gray.4" size="xs">
-                Session: {sessionId}
-              </Text>
-            )}
-          </Stack>
-        </Group>
+          )}
+        </Stack>
 
         <Group justify="center" gap="md">
           {scanState === 'scanning' && (
@@ -346,6 +419,22 @@ function App() {
           </Alert>
         )}
       </Stack>
+
+      {sessionId && (
+        <Box
+          style={{
+            position: 'absolute',
+            bottom: 16,
+            left: 0,
+            right: 0,
+            textAlign: 'center',
+          }}
+        >
+          <Text c="gray.4" size="xs">
+            Session: {sessionId}
+          </Text>
+        </Box>
+      )}
     </Box>
   )
 }

@@ -5,7 +5,7 @@ from pydantic import BaseModel
 import uuid
 import os
 import subprocess
-from .scanner import ScanSession, SessionState
+from .scanner import AUTO_FINISH_TIMEOUT_SECONDS, ScanSession, SessionState
 
 def detect_scanner() -> tuple[bool, str | None]:
     """
@@ -68,6 +68,7 @@ sessions: dict[str, ScanSession] = {}
 class StartScanResponse(BaseModel):
     session_id: str
     message: str
+    timeout_seconds: int
 
 
 class SessionStatusResponse(BaseModel):
@@ -110,10 +111,11 @@ def start_scan(background_tasks: BackgroundTasks):
         session_id=session_id,
         message=(
             "Scan loop started. Place pages on the scanner. "
-            "The session will auto-finish after 20s of no new pages. "
+            f"The session will auto-finish after {AUTO_FINISH_TIMEOUT_SECONDS}s of no new pages. "
             "Call POST /scan/{session_id}/finish to stop and generate PDF immediately, "
             "or POST /scan/{session_id}/cancel to abort."
         ),
+        timeout_seconds=AUTO_FINISH_TIMEOUT_SECONDS,
     )
 
 
