@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uuid
 import os
@@ -224,3 +225,14 @@ def _get_session(session_id: str) -> ScanSession:
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
     return session
+
+
+ENABLE_GUI = os.getenv("ENABLE_GUI", "true").lower() == "true"
+frontend_dist_path = "/app/frontend/dist"
+
+if ENABLE_GUI and os.path.isdir(frontend_dist_path):
+    app.mount(
+        "/",
+        StaticFiles(directory=frontend_dist_path, html=True),
+        name="frontend",
+    )
