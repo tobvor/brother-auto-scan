@@ -11,6 +11,7 @@ services:
       - ~/Dokumente/Scans:/app/scans
     environment:
       - SCANNER_RESOLUTION=300
+      - ENABLE_GUI=true
       # Uncomment and modify if auto-detection doesn't work:
       # - SCANNER_NAME=Brother DS-640 USB
       # - SCANNER_DEVICE=brother5:bus6;dev3

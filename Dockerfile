@@ -1,3 +1,12 @@
+FROM node:20 AS frontend-builder
+
+WORKDIR /frontend
+
+COPY frontend/package*.json ./
+RUN npm install
+COPY frontend .
+RUN npm run build
+
 # Use Python slim image as base
 FROM python:3.14-slim
 
@@ -20,13 +29,17 @@ ENV SCANNER_DEVICE=""
 ENV SCANNER_NAME=""
 ENV SCANNER_RESOLUTION=300
 ENV SCANNER_TARGET_DIR=/app/scans
+ENV ENABLE_GUI=true
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY . .
+COPY ./app .
+
+# Copy built frontend
+COPY --from=frontend-builder /frontend/dist /app/frontend/dist
 
 # Create the default scan output directory
 RUN mkdir -p /app/scans
@@ -35,4 +48,4 @@ RUN mkdir -p /app/scans
 EXPOSE 8000
 
 # Run the FastAPI application with uvicorn
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

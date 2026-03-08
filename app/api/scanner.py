@@ -7,11 +7,13 @@ import threading
 from enum import Enum
 
 
-# How often (seconds) to attempt scanning the next page
-SCAN_INTERVAL_SECONDS = 2
+# How often (seconds) to attempt scanning the next page.
+# Can be configured via SCAN_INTERVAL_SECONDS environment variable, defaults to 2s.
+SCAN_INTERVAL_SECONDS = int(os.getenv("SCAN_INTERVAL_SECONDS", "2"))
 
-# Automatically finish after this many seconds without a successful new page
-AUTO_FINISH_TIMEOUT_SECONDS = 20
+# Automatically finish after this many seconds without a successful new page.
+# Can be configured via AUTO_FINISH_TIMEOUT_SECONDS environment variable, defaults to 20s.
+AUTO_FINISH_TIMEOUT_SECONDS = int(os.getenv("AUTO_FINISH_TIMEOUT_SECONDS", "20"))
 
 # Scanner parameters from bash script
 SCANNER_NAME = os.getenv('SCANNER_NAME', 'Brother DS-640 USB')
@@ -21,6 +23,7 @@ TARGET_DIR = os.path.expanduser(os.getenv('SCANNER_TARGET_DIR', '/app/scans'))  
 
 class SessionState(str, Enum):
     SCANNING = "scanning"
+    PAUSED = "paused"
     PROCESSING = "processing"
     FINISHED = "finished"
     CANCELLED = "cancelled"
@@ -28,15 +31,25 @@ class SessionState(str, Enum):
 
 
 class ScanSession:
-    def __init__(self, session_id: str):
+    def __init__(
+        self,
+        session_id: str,
+        scan_interval_seconds: int = SCAN_INTERVAL_SECONDS,
+        auto_finish_timeout_seconds: int = AUTO_FINISH_TIMEOUT_SECONDS,
+    ):
         self.session_id = session_id
         self.state = SessionState.SCANNING
         self.pages_scanned = 0
         self.error: str | None = None
 
+        # Per-session timing configuration
+        self.scan_interval_seconds = scan_interval_seconds
+        self.auto_finish_timeout_seconds = auto_finish_timeout_seconds
+
         # Threading events for external control
         self._finish_event = threading.Event()
         self._cancel_event = threading.Event()
+        self._pause_event = threading.Event()
 
         # Create isolated working directory for this session
         self.work_dir = tempfile.mkdtemp(prefix=f"scan_{session_id}_")
@@ -65,7 +78,7 @@ class ScanSession:
 
     def run_scan_loop(self) -> None:
         """
-        Continuously scan pages every SCAN_INTERVAL_SECONDS.
+        Continuously scan pages every self.scan_interval_seconds.
         Stops when:
           - finish is requested  → generates PDF
           - cancel is requested  → cleans up and exits
@@ -85,9 +98,39 @@ class ScanSession:
                 self._run_ocrmypdf()
                 return
 
+            # --- Handle pause/resume ---
+            if self._pause_event.is_set():
+                # Enter paused state and wait until resumed, cancelled, or finished
+                if self.state != SessionState.PAUSED:
+                    self.state = SessionState.PAUSED
+
+                while self._pause_event.is_set():
+                    # Allow cancel while paused
+                    if self._cancel_event.is_set():
+                        self.state = SessionState.CANCELLED
+                        self.cleanup()
+                        return
+
+                    # Allow finish while paused
+                    if self._finish_event.is_set():
+                        self._run_ocrmypdf()
+                        return
+
+                    time.sleep(0.2)
+
+                # On resume, start a fresh idle timeout window from now
+                last_successful_scan_time = time.monotonic()
+
+                # Resume scanning state if we were paused
+                if self.state == SessionState.PAUSED:
+                    self.state = SessionState.SCANNING
+
+                # Continue main loop after resume
+                continue
+
             # --- Auto-finish on idle timeout ---
             idle_seconds = time.monotonic() - last_successful_scan_time
-            if idle_seconds >= AUTO_FINISH_TIMEOUT_SECONDS:
+            if idle_seconds >= self.auto_finish_timeout_seconds:
                 if self.pages_scanned > 0:
                     self._run_ocrmypdf()
                 else:
@@ -102,11 +145,27 @@ class ScanSession:
                 last_successful_scan_time = time.monotonic()
 
             # --- Wait before next attempt, but respect control signals ---
-            cancelled = self._cancel_event.wait(timeout=SCAN_INTERVAL_SECONDS)
+            cancelled = self._cancel_event.wait(timeout=self.scan_interval_seconds)
             if cancelled:
                 self.state = SessionState.CANCELLED
                 self.cleanup()
                 return
+
+    # -------------------------------------------------------------------------
+    # External pause/resume controls
+    # -------------------------------------------------------------------------
+
+    def request_pause(self) -> None:
+        """Pause the scan loop without finishing PDF generation."""
+        self._pause_event.set()
+        if self.state == SessionState.SCANNING:
+            self.state = SessionState.PAUSED
+
+    def request_resume(self) -> None:
+        """Resume the scan loop after a pause."""
+        self._pause_event.clear()
+        if self.state == SessionState.PAUSED:
+            self.state = SessionState.SCANNING
 
     # -------------------------------------------------------------------------
     # Scanner device detection

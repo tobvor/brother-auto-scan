@@ -1,10 +1,11 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uuid
 import os
 import subprocess
-from scanner import ScanSession, SessionState
+from .scanner import AUTO_FINISH_TIMEOUT_SECONDS, SCAN_INTERVAL_SECONDS, ScanSession, SessionState
 
 def detect_scanner() -> tuple[bool, str | None]:
     """
@@ -64,9 +65,15 @@ sessions: dict[str, ScanSession] = {}
 
 # --- Models ---
 
+class StartScanRequest(BaseModel):
+    scan_interval_seconds: int | None = None
+    auto_finish_timeout_seconds: int | None = None
+
+
 class StartScanResponse(BaseModel):
     session_id: str
     message: str
+    timeout_seconds: int
 
 
 class SessionStatusResponse(BaseModel):
@@ -88,19 +95,49 @@ class CancelScanResponse(BaseModel):
     message: str
 
 
+class PauseScanResponse(BaseModel):
+    session_id: str
+    message: str
+
+
+class ResumeScanResponse(BaseModel):
+    session_id: str
+    message: str
+
+
 # --- Routes ---
 
 @app.post("/scan/start", response_model=StartScanResponse, status_code=201)
-def start_scan(background_tasks: BackgroundTasks):
+def start_scan(
+    background_tasks: BackgroundTasks,
+    params: StartScanRequest | None = None,
+):
     """
     Start a new scanning session.
     Immediately begins a scan loop:
-      - Scans a page every 2 seconds
-      - Automatically finishes after 20 seconds of no new pages
+      - Scans a page every `scan_interval_seconds` (default: 2s)
+      - Automatically finishes after `auto_finish_timeout_seconds` of no new pages (default: 20s)
+    You can override both values by passing them in the JSON body.
     Returns a session_id to use for finish/cancel/status/download.
     """
+    # Resolve effective configuration (fall back to global defaults if not provided)
+    scan_interval_seconds = (
+        params.scan_interval_seconds
+        if params and params.scan_interval_seconds is not None
+        else SCAN_INTERVAL_SECONDS
+    )
+    auto_finish_timeout_seconds = (
+        params.auto_finish_timeout_seconds
+        if params and params.auto_finish_timeout_seconds is not None
+        else AUTO_FINISH_TIMEOUT_SECONDS
+    )
+
     session_id = str(uuid.uuid4())
-    session = ScanSession(session_id)
+    session = ScanSession(
+        session_id,
+        scan_interval_seconds=scan_interval_seconds,
+        auto_finish_timeout_seconds=auto_finish_timeout_seconds,
+    )
     sessions[session_id] = session
 
     background_tasks.add_task(session.run_scan_loop)
@@ -109,10 +146,11 @@ def start_scan(background_tasks: BackgroundTasks):
         session_id=session_id,
         message=(
             "Scan loop started. Place pages on the scanner. "
-            "The session will auto-finish after 20s of no new pages. "
+            f"The session will auto-finish after {auto_finish_timeout_seconds}s of no new pages. "
             "Call POST /scan/{session_id}/finish to stop and generate PDF immediately, "
             "or POST /scan/{session_id}/cancel to abort."
         ),
+        timeout_seconds=auto_finish_timeout_seconds,
     )
 
 
@@ -120,7 +158,7 @@ def start_scan(background_tasks: BackgroundTasks):
 def finish_scan(session_id: str):
     """
     Stop the scan loop immediately and start PDF generation.
-    Works only while state is 'scanning'.
+    Typically used while state is 'scanning' or 'paused'.
     """
     session = _get_session(session_id)
 
@@ -173,7 +211,7 @@ def cancel_scan(session_id: str):
 def get_status(session_id: str):
     """
     Get the current state of a scan session.
-    States: scanning | processing | finished | cancelled | error
+    States: scanning | paused | processing | finished | cancelled | error
     """
     session = _get_session(session_id)
     return SessionStatusResponse(
@@ -181,6 +219,53 @@ def get_status(session_id: str):
         state=session.state.value,
         pages_scanned=session.pages_scanned,
         error=session.error,
+    )
+
+
+@app.post("/scan/{session_id}/pause", response_model=PauseScanResponse)
+def pause_scan(session_id: str):
+    """
+    Pause an active scan session.
+    Stops the scan loop from acquiring new pages but does not start PDF generation.
+    """
+    session = _get_session(session_id)
+
+    if session.state == SessionState.PAUSED:
+        raise HTTPException(status_code=400, detail="Session is already paused.")
+    if session.state != SessionState.SCANNING:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot pause: session is in state '{session.state.value}'.",
+        )
+
+    session.request_pause()
+
+    return PauseScanResponse(
+        session_id=session_id,
+        message="Session paused. Scanning will not continue until resumed.",
+    )
+
+
+@app.post("/scan/{session_id}/resume", response_model=ResumeScanResponse)
+def resume_scan(session_id: str):
+    """
+    Resume a previously paused scan session.
+    """
+    session = _get_session(session_id)
+
+    if session.state == SessionState.SCANNING:
+        raise HTTPException(status_code=400, detail="Session is already scanning.")
+    if session.state != SessionState.PAUSED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot resume: session is in state '{session.state.value}'.",
+        )
+
+    session.request_resume()
+
+    return ResumeScanResponse(
+        session_id=session_id,
+        message="Session resumed. Scanning will continue.",
     )
 
 
@@ -224,3 +309,14 @@ def _get_session(session_id: str) -> ScanSession:
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
     return session
+
+
+ENABLE_GUI = os.getenv("ENABLE_GUI", "true").lower() == "true"
+frontend_dist_path = "/app/frontend/dist"
+
+if ENABLE_GUI and os.path.isdir(frontend_dist_path):
+    app.mount(
+        "/",
+        StaticFiles(directory=frontend_dist_path, html=True),
+        name="frontend",
+    )
