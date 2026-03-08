@@ -340,7 +340,7 @@ function App() {
       const elapsed = (Date.now() - lastActivityAt) / 1000
       const remaining = Math.max(0, total - elapsed)
       setRemainingSeconds(remaining)
-    }, 200)
+    }, 100)
 
     return () => {
       window.clearInterval(interval)
@@ -428,20 +428,20 @@ function App() {
           {scanState === 'scanning' && (
             <>
               <Button
-                color="yellow"
-                variant="light"
-                onClick={handlePause}
-                disabled={isBusy}
-              >
-                Pause
-              </Button>
-              <Button
                 color="green"
                 variant="light"
                 onClick={handleFinish}
                 disabled={isBusy || pagesScanned === 0}
               >
                 Finish now
+              </Button>
+              <Button
+                color="yellow"
+                variant="light"
+                onClick={handlePause}
+                disabled={isBusy}
+              >
+                Pause
               </Button>
               <Button
                 color="red"
@@ -459,18 +459,18 @@ function App() {
               <Button
                 color="green"
                 variant="light"
-                onClick={handleResume}
-                disabled={isBusy}
-              >
-                Resume
-              </Button>
-              <Button
-                color="green"
-                variant="light"
                 onClick={handleFinish}
                 disabled={isBusy || pagesScanned === 0}
               >
                 Finish now
+              </Button>
+              <Button
+                color="green"
+                variant="light"
+                onClick={handleResume}
+                disabled={isBusy}
+              >
+                Resume
               </Button>
               <Button
                 color="red"
