@@ -1,14 +1,14 @@
 version: '3.8'
 
 services:
-  scanner-api:
-    build: .
+  brother-auto-scan:
+    image: tobvor/brother-auto-scan:latest
     ports:
       - "8000:8000"
     devices:
       - /dev/bus/usb:/dev/bus/usb
     volumes:
-      - ~/Dokumente/Scans:/app/scans
+      - ./scans:/app/scans
     environment:
       - SCANNER_RESOLUTION=300
       - ENABLE_GUI=true
