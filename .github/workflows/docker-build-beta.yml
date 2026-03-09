@@ -4,10 +4,15 @@ on:
   push:
     branches:
       - beta
+    paths:
+      - 'Dockerfile'
+      - 'requirements.txt'
+      - 'app/**'
+      - 'frontend/**'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
