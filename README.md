@@ -8,9 +8,9 @@ auto-collecting pages in a loop, then generating a PDF/A with `img2pdf` and `ocr
 Build the container:
 
 ```bash
-docker build -t brother-scanner-api .
+docker build -t brother-auto-scan .
 # or with podman
-podman build -t brother-scanner-api .
+podman build -t brother-auto-scan .
 ```
 
 #### Option 1: Using docker-compose (recommended for easy management)
@@ -34,35 +34,35 @@ lsusb | grep Brother
 # Example: Bus 006 Device 009: ID 04f9:0468 Brother Industries, Ltd
 
 # Option 1: Auto-detect mode with specific USB device (recommended for security)
-docker run -d --name scanner-api -p 8000:8000 \
+docker run -d --name brother-auto-scan -p 8000:8000 \
   --device /dev/bus/usb/006/009 \
-  -v ~/Dokumente/Scans:/app/scans \
-  brother-scanner-api
+  -v ./scans:/app/scans \
+  brother-auto-scan
 
 # Option 2: Pass entire USB bus (convenient, grants access to all USB devices)
-docker run -d --name scanner-api -p 8000:8000 \
+docker run -d --name brother-auto-scan -p 8000:8000 \
   --device /dev/bus/usb \
-  -v ~/Dokumente/Scans:/app/scans \
-  brother-scanner-api
+  -v ./scans:/app/scans \
+  brother-auto-scan
 
 # or with podman
-podman run -d --name scanner-api -p 8000:8000 \
+podman run -d --name brother-auto-scan -p 8000:8000 \
   --device /dev/bus/usb \
-  -v ~/Dokumente/Scans:/app/scans \
-  brother-scanner-api
+  -v ./scans:/app/scans \
+  brother-auto-scan
 
 # Override scanner device (if auto-detection doesn't work)
-docker run -d --name scanner-api -p 8000:8000 \
+docker run -d --name brother-auto-scan -p 8000:8000 \
   --device /dev/bus/usb \
-  -v ~/Dokumente/Scans:/app/scans \
+  -v ./scans:/app/scans \
   -e SCANNER_NAME="Brother DS-640 USB" \
   -e SCANNER_RESOLUTION="300" \
-  brother-scanner-api
+  brother-auto-scan
 
 # Alternative: Run with privileged access (less secure but grants all device access)
-docker run -d --name scanner-api -p 8000:8000 \
-  -v ~/Dokumente/Scans:/app/scans \
-  --privileged brother-scanner-api
+docker run -d --name brother-auto-scan -p 8000:8000 \
+  -v ./scans:/app/scans \
+  --privileged brother-auto-scan
 ```
 
 **Note**: 
@@ -128,9 +128,9 @@ curl -X DELETE http://localhost:8000/scan/$SESSION
 
 Open http://localhost:8000/docs
 
-## Web GUI (React + Mantine)
+## Web GUI
 
-This project includes a minimal web GUI built with React, Vite, and Mantine. The GUI is served by the same FastAPI container and talks to the existing `/scan/*` endpoints.
+This project includes a minimal web GUI. The GUI is served by the same FastAPI container and talks to the existing `/scan/*` endpoints.
 
 - When **GUI is enabled**, opening `http://localhost:8000/` shows:
   - A full-screen gradient background.
@@ -143,11 +143,11 @@ This project includes a minimal web GUI built with React, Vite, and Mantine. The
 - Docker:
 
 ```bash
-docker run -d --name scanner-api -p 8000:8000 \
+docker run -d --name brother-auto-scan -p 8000:8000 \
   --device /dev/bus/usb \
-  -v ~/Dokumente/Scans:/app/scans \
+  -v ./scans:/app/scans \
   -e ENABLE_GUI=true \
-  brother-scanner-api
+  brother-auto-scan
 ```
 
 - docker-compose (default in this repo):
@@ -165,11 +165,11 @@ To disable the GUI and run the container in **headless mode**, set `ENABLE_GUI=f
 - Docker:
 
 ```bash
-docker run -d --name scanner-api -p 8000:8000 \
+docker run -d --name brother-auto-scan -p 8000:8000 \
   --device /dev/bus/usb \
-  -v ~/Dokumente/Scans:/app/scans \
+  -v ./scans:/app/scans \
   -e ENABLE_GUI=false \
-  brother-scanner-api
+  brother-auto-scan
 ```
 
 - docker-compose override:
