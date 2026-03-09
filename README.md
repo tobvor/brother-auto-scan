@@ -3,22 +3,35 @@
 A FastAPI REST API to scan documents with a Brother printer via `scanimage`,
 auto-collecting pages in a loop, then generating a PDF/A with `img2pdf` and `ocrmypdf`.
 
-## Setup
-
-Build the container:
-
-```bash
-docker build -t brother-auto-scan .
-# or with podman
-podman build -t brother-auto-scan .
-```
 
 #### Option 1: Using docker-compose (recommended for easy management)
 
-Create a `compose.yml` file (already included in the repository) and run:
+Create a `docker-compose.yml` file:
 
 ```bash
-# Install podman-compose if not available: pip install podman-compose
+version: '3.8'
+
+services:
+  brother-auto-scan:
+    image: tobvor/brother-auto-scan:latest
+    ports:
+      - "8000:8000"
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+    volumes:
+      - ./scans:/app/scans
+    environment:
+      - SCANNER_RESOLUTION=300
+      - ENABLE_GUI=true
+      # Uncomment and modify if auto-detection doesn't work:
+      # - SCANNER_NAME=Brother DS-640 USB
+      # - SCANNER_DEVICE=brother5:bus6;dev3
+    restart: unless-stopped
+```
+
+And run the compose file:
+```bash
+# Run docker 
 docker compose up -d
 # or with podman-compose
 podman-compose up -d
@@ -130,13 +143,7 @@ Open http://localhost:8000/docs
 
 ## Web GUI
 
-This project includes a minimal web GUI. The GUI is served by the same FastAPI container and talks to the existing `/scan/*` endpoints.
-
-- When **GUI is enabled**, opening `http://localhost:8000/` shows:
-  - A full-screen gradient background.
-  - A single round **Start scan** button in the center.
-  - When scanning/processing, the button displays the current status and page count; a **Cancel** button appears underneath.
-  - When finished, you can **download the PDF** and **reset** the session.
+This project includes a minimal web GUI (when plugging directly via USB into a server).
 
 ### Running with GUI
 
@@ -158,7 +165,7 @@ docker compose up -d
 
 The service exposes both the API (`/scan/...`) and the GUI at `/`.
 
-### Running without GUI (headless API only)
+## Running without GUI (headless API only)
 
 To disable the GUI and run the container in **headless mode**, set `ENABLE_GUI=false`. In this mode the API behaves as before and no frontend is mounted.
 
